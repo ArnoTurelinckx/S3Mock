@@ -24,25 +24,13 @@ import static com.adobe.testing.s3mock.util.BetterHeaders.NOT_SERVER_SIDE_ENCRYP
 import static com.adobe.testing.s3mock.util.BetterHeaders.RANGE;
 import static com.adobe.testing.s3mock.util.BetterHeaders.SERVER_SIDE_ENCRYPTION;
 import static com.adobe.testing.s3mock.util.BetterHeaders.SERVER_SIDE_ENCRYPTION_AWS_KMS_KEYID;
+import static java.util.stream.Collectors.toList;
 
 import com.adobe.testing.s3mock.domain.BucketContents;
 import com.adobe.testing.s3mock.domain.FileStore;
 import com.adobe.testing.s3mock.domain.S3Object;
-import com.adobe.testing.s3mock.dto.BatchDeleteRequest;
-import com.adobe.testing.s3mock.dto.BatchDeleteResponse;
-import com.adobe.testing.s3mock.dto.CompleteMultipartUploadResult;
-import com.adobe.testing.s3mock.dto.CopyObjectResult;
-import com.adobe.testing.s3mock.dto.CopyPartResult;
-import com.adobe.testing.s3mock.dto.DeletedObject;
-import com.adobe.testing.s3mock.dto.InitiateMultipartUploadResult;
-import com.adobe.testing.s3mock.dto.ListAllMyBucketsResult;
-import com.adobe.testing.s3mock.dto.ListBucketResult;
-import com.adobe.testing.s3mock.dto.ListMultipartUploadsResult;
-import com.adobe.testing.s3mock.dto.ListPartsResult;
-import com.adobe.testing.s3mock.dto.MultipartUpload;
-import com.adobe.testing.s3mock.dto.ObjectRef;
-import com.adobe.testing.s3mock.dto.Owner;
-import com.adobe.testing.s3mock.dto.Range;
+import com.adobe.testing.s3mock.dto.*;
+
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -52,6 +40,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Predicate;
 import javax.servlet.ServletInputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -234,6 +223,62 @@ class FileStoreController {
 
     return null;
   }
+
+  @RequestMapping(
+          value = "/{bucketName}/",
+          params = "list-type",
+          method = RequestMethod.GET,
+          produces = {"application/x-www-form-urlencoded"})
+  @ResponseBody
+  public ListObjectsV2Result listObjectsV2InsideBucket(
+          @PathVariable final String bucketName,
+          @RequestParam(required = false) final String delimiter,
+          @RequestParam(name = "encoding-type", required = false) final String encodingType,
+          @RequestParam(name = "max-keys", required = false, defaultValue = "1000") final int maxKeys,
+          @RequestParam(required = false) final String prefix,
+          @RequestParam(name = "list-type", required = false, defaultValue = "2") final String listType,
+          @RequestParam(name = "continuation-token", required = false) final String continuationToken,
+          @RequestParam(name = "fetch-owner", required = false) final Boolean fetchOwner,
+          @RequestParam(name = "start-after", required = false) final String startAfter,
+          final HttpServletResponse response
+  ) throws IOException {
+    List<S3Object> s3Objects = new ArrayList<>();
+    List<BucketContents> contents = new ArrayList<>();
+    List<CommonPrefixes> commonPrefixes = new ArrayList<>();
+      try {
+          s3Objects = fileStore.getS3Objects(bucketName, prefix);
+      } catch (IOException e) {
+          LOG.error(String.format("Object(s) could not retrieved from bucket %s", bucketName));
+          response.sendError(500, e.getMessage());
+      }
+
+      if (delimiter != null){
+        contents = s3Objects.stream().filter(objectContainsDelimiter(delimiter).negate()).map(this::bucketContents).collect(toList());
+        commonPrefixes = s3Objects.stream()
+                .filter(objectContainsDelimiter(delimiter))
+                .map(object -> object.getName().substring(0, object.getName().indexOf(delimiter) + 1))
+                .distinct()
+                .map(CommonPrefixes::new)
+                .collect(toList());
+      }else{
+        contents = s3Objects.stream().map(this::bucketContents).collect(toList());
+      }
+      contents = contents.stream().limit(maxKeys).collect(toList());
+      return new ListObjectsV2Result(commonPrefixes, false, bucketName, 0, "token", prefix, delimiter, maxKeys, encodingType, continuationToken, startAfter, contents);
+  }
+
+  private Predicate<S3Object> objectContainsDelimiter(@RequestParam(required = false) String delimiter) {
+    return object -> object.getName().contains(delimiter);
+  }
+
+  private BucketContents bucketContents(S3Object s3Object) {
+        return new BucketContents(s3Object.getName(),
+                s3Object.getModificationDate(),
+                s3Object.getMd5(),
+                s3Object.getSize(),
+                "STANDARD",
+                TEST_OWNER);
+    }
 
   /**
    * Adds an object to a bucket.

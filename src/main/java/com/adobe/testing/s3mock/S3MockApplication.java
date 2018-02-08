@@ -19,18 +19,7 @@ package com.adobe.testing.s3mock;
 import com.adobe.testing.s3mock.domain.Bucket;
 import com.adobe.testing.s3mock.domain.FileStore;
 import com.adobe.testing.s3mock.domain.KMSKeyStore;
-import com.adobe.testing.s3mock.dto.BatchDeleteRequest;
-import com.adobe.testing.s3mock.dto.BatchDeleteResponse;
-import com.adobe.testing.s3mock.dto.CompleteMultipartUploadResult;
-import com.adobe.testing.s3mock.dto.CopyObjectResult;
-import com.adobe.testing.s3mock.dto.CopyPartResult;
-import com.adobe.testing.s3mock.dto.ErrorResponse;
-import com.adobe.testing.s3mock.dto.InitiateMultipartUploadResult;
-import com.adobe.testing.s3mock.dto.ListAllMyBucketsResult;
-import com.adobe.testing.s3mock.dto.ListBucketResult;
-import com.adobe.testing.s3mock.dto.ListMultipartUploadsResult;
-import com.adobe.testing.s3mock.dto.ListPartsResult;
-import com.adobe.testing.s3mock.dto.Owner;
+import com.adobe.testing.s3mock.dto.*;
 import com.adobe.testing.s3mock.util.ObjectRefConverter;
 import com.adobe.testing.s3mock.util.RangeConverter;
 import org.apache.catalina.connector.Connector;
@@ -281,6 +270,7 @@ public class S3MockApplication extends WebMvcConfigurerAdapter {
         CopyPartResult.class,
         CopyObjectResult.class,
         ListBucketResult.class,
+        ListObjectsV2Result.class,
         InitiateMultipartUploadResult.class,
         ListMultipartUploadsResult.class,
         ListPartsResult.class,
@@ -295,6 +285,7 @@ public class S3MockApplication extends WebMvcConfigurerAdapter {
         ListAllMyBucketsResult.class,
         CopyObjectResult.class,
         ListBucketResult.class,
+        ListObjectsV2Result.class,
         InitiateMultipartUploadResult.class,
         ListMultipartUploadsResult.class,
         ListPartsResult.class,
