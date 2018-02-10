@@ -22,8 +22,6 @@ public class ListObjectsV2Result implements Serializable {
     private String bucketName;
     @XStreamAlias("KeyCount")
     private int keyCount;
-    @XStreamAlias("NextContinuationToken")
-    private String nextContinuationToken;
     @XStreamAlias("Prefix")
     private String prefix;
     @XStreamAlias("Delimiter")
@@ -46,7 +44,6 @@ public class ListObjectsV2Result implements Serializable {
                                boolean isTruncated,
                                String bucketName,
                                int keyCount,
-                               String nextContinuationToken,
                                String prefix,
                                String delimiter,
                                int maxKeys,
@@ -58,7 +55,6 @@ public class ListObjectsV2Result implements Serializable {
         this.isTruncated = isTruncated;
         this.bucketName = bucketName;
         this.keyCount = keyCount;
-        this.nextContinuationToken = nextContinuationToken;
         this.prefix = prefix;
         this.delimiter = delimiter;
         this.maxKeys = maxKeys;
@@ -82,10 +78,6 @@ public class ListObjectsV2Result implements Serializable {
     @XmlElement(name = "KeyCount")
     public int getKeyCount() {
         return keyCount;
-    }
-    @XmlElement(name = "NextContinuationToken")
-    public String getNextContinuationToken() {
-        return nextContinuationToken;
     }
     @XmlElement(name = "Prefix")
     public String getPrefix() {

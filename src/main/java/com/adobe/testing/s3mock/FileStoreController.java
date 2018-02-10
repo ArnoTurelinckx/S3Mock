@@ -35,12 +35,10 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
+import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.stream.IntStream;
 import javax.servlet.ServletInputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -207,12 +205,7 @@ class FileStoreController {
       final List<S3Object> s3Objects = fileStore.getS3Objects(bucketName, prefix);
       LOG.debug(String.format("Found %s objects in bucket %s", s3Objects.size(), bucketName));
       for (final S3Object s3Object : s3Objects) {
-        contents.add(new BucketContents(s3Object.getName(),
-            s3Object.getModificationDate(),
-            s3Object.getMd5(),
-            s3Object.getSize(),
-            "STANDARD",
-            TEST_OWNER));
+        contents.add(contenFor(s3Object, TEST_OWNER));
       }
 
       return new ListBucketResult(bucketName, prefix, null, "1000", false, contents, null);
@@ -245,39 +238,72 @@ class FileStoreController {
     List<S3Object> s3Objects = new ArrayList<>();
     List<BucketContents> contents = new ArrayList<>();
     List<CommonPrefixes> commonPrefixes = new ArrayList<>();
+      Owner owner = fetchOwner ? TEST_OWNER : null;
+      boolean truncated = false;
+      int objectsToSkip = 0;
       try {
-          s3Objects = fileStore.getS3Objects(bucketName, prefix);
+          s3Objects = fileStore.getS3Objects(bucketName, null);
       } catch (IOException e) {
-          LOG.error(String.format("Object(s) could not retrieved from bucket %s", bucketName));
+          LOG.error(String.format("Object(s) could not be retrieved from bucket %s", bucketName));
           response.sendError(500, e.getMessage());
       }
-
+      if (prefix != null){
+        s3Objects = s3Objects.stream().filter(objectStartsWith(prefix)).collect(toList());
+      }
       if (delimiter != null){
-        contents = s3Objects.stream().filter(objectContainsDelimiter(delimiter).negate()).map(this::bucketContents).collect(toList());
+        contents = s3Objects.stream().filter(objectContainsDelimiter(delimiter).negate()).map(s3Object -> contenFor(s3Object, owner)).collect(toList());
         commonPrefixes = s3Objects.stream()
                 .filter(objectContainsDelimiter(delimiter))
-                .map(object -> object.getName().substring(0, object.getName().indexOf(delimiter) + 1))
+                .map(S3Object::getName)
+                .map(toCommonprefix(delimiter, prefix))
                 .distinct()
                 .map(CommonPrefixes::new)
                 .collect(toList());
       }else{
-        contents = s3Objects.stream().map(this::bucketContents).collect(toList());
+        contents = s3Objects.stream().map(s3Object -> contenFor(s3Object, owner)).collect(toList());
       }
-      contents = contents.stream().limit(maxKeys).collect(toList());
-      return new ListObjectsV2Result(commonPrefixes, false, bucketName, 0, "token", prefix, delimiter, maxKeys, encodingType, continuationToken, startAfter, contents);
+      if (contents.size() > maxKeys){
+          truncated = true;
+      }
+      if (continuationToken != null){
+          List<BucketContents> contentsCopy = contents;
+          objectsToSkip = IntStream.range(1, contents.size() + 1)
+                  .filter(i -> continuationToken.equals(contentsCopy.get(i-1).getKey()))
+                  .findFirst().orElse(0);
+      }
+      contents = contents.stream().skip(objectsToSkip).limit(maxKeys).collect(toList());
+      return new ListObjectsV2Result(commonPrefixes, truncated, bucketName, 0, prefix, delimiter, maxKeys, encodingType, continuationToken, startAfter, contents);
+  }
+
+  private Function<String, String> toCommonprefix(final String delimiter, final String prefix) {
+    return name -> name.substring(0, endIndexFor(name, prefix, delimiter));
+  }
+
+  private int endIndexFor(final String name, final String prefix, final String delimiter){
+    if (prefix == null) {
+      return name.indexOf(delimiter) + 1;
+    }
+    else{
+      String nameWithoutPrefix = name.substring(prefix.length());
+      return (name.length() - nameWithoutPrefix.length()) + (nameWithoutPrefix.indexOf(delimiter) + 1);
+    }
+  }
+
+  private Predicate<S3Object> objectStartsWith(String prefix) {
+    return object -> object.getName().startsWith(prefix);
   }
 
   private Predicate<S3Object> objectContainsDelimiter(@RequestParam(required = false) String delimiter) {
     return object -> object.getName().contains(delimiter);
   }
 
-  private BucketContents bucketContents(S3Object s3Object) {
+  private BucketContents contenFor(S3Object s3Object, Owner owner) {
         return new BucketContents(s3Object.getName(),
                 s3Object.getModificationDate(),
                 s3Object.getMd5(),
                 s3Object.getSize(),
                 "STANDARD",
-                TEST_OWNER);
+                owner);
     }
 
   /**
