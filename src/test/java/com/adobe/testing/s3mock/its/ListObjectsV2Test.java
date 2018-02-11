@@ -9,6 +9,7 @@ import org.junit.Before;
 import org.junit.ClassRule;
 import org.junit.Test;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.IntConsumer;
 import java.util.stream.Collectors;
@@ -76,6 +77,26 @@ public class ListObjectsV2Test {
     }
 
     @Test
+    public void commonPrefixesCountAsKeys() {
+        //Given:
+        s3Client.putObject(BUCKET_NAME, "sample1.jpg", "");
+        s3Client.putObject(BUCKET_NAME, "sample2.jpg", "");
+        s3Client.putObject(BUCKET_NAME, "sample3.jpg", "");
+        s3Client.putObject(BUCKET_NAME, "photos/2006/January/sample.jpg", "");
+
+        //When:
+        ListObjectsV2Result actual = s3Client.listObjectsV2(
+                new ListObjectsV2Request().withBucketName(BUCKET_NAME)
+                        .withMaxKeys(3)
+                        .withDelimiter("/")
+        );
+
+        //Then:
+        assertThat(actual.getObjectSummaries().size(), is(2));
+        assertThat(actual.getCommonPrefixes().size(), is(1));
+    }
+
+    @Test
     public void listObjectsV2_providingContinuationToken_willReturnNextSequenceOfObjectsAndGivenContinuationToken() {
         //Given:
         addObjectToBucket(4);
@@ -140,7 +161,7 @@ public class ListObjectsV2Test {
 
         //Then:
         assertThat(actual.getCommonPrefixes(), containsInAnyOrder("photos/2006/January/","photos/2006/February/"));
-        //TODO: What about the content?
+        //TODO: What about the content?, should it contain "photos/2006/", why?
     }
 
     @Test
@@ -168,13 +189,35 @@ public class ListObjectsV2Test {
     }
 
     @Test
-    public void startAfter() throws Exception {
-        //does what it name suggests (lexicographical order)
+    public void keyCount_equalsTheSumOfContentsAndCommonPrefixes() throws Exception {
+        //Given:
+        s3Client.putObject(BUCKET_NAME, "sample1.jpg", "");
+        s3Client.putObject(BUCKET_NAME, "sample2.jpg", "");
+        s3Client.putObject(BUCKET_NAME, "sample3.jpg", "");
+        s3Client.putObject(BUCKET_NAME, "photos/2006/January/sample.jpg", "");
+
+        //When:
+        ListObjectsV2Result actual = s3Client.listObjectsV2(new ListObjectsV2Request().withBucketName(BUCKET_NAME).withDelimiter("/"));
+
+        //Then:
+        assertThat(actual.getObjectSummaries().size(), is(3));
+        assertThat(actual.getCommonPrefixes().size(), is(1));
+        assertThat(actual.getKeyCount(), is(4));
     }
 
     @Test
-    public void keyCount() throws Exception {
-        //sum of result's contents and commonPrefixes
+    public void startAfter_returnsObjectsFromBucketStartingAfterGiven_inLexicographicallyOrder() {
+        //Given:
+        s3Client.putObject(BUCKET_NAME, "d", "");
+        s3Client.putObject(BUCKET_NAME, "a", "");
+        s3Client.putObject(BUCKET_NAME, "c", "");
+        s3Client.putObject(BUCKET_NAME, "b", "");
+
+        //When:
+        ListObjectsV2Result actual = s3Client.listObjectsV2(new ListObjectsV2Request().withBucketName(BUCKET_NAME).withStartAfter("b"));
+
+        //Then:
+        assertThat(contentKeysWithin(actual), is(Arrays.asList("c", "d")));
     }
 
     private List<String> contentKeysWithin(ListObjectsV2Result actual) {

@@ -250,8 +250,11 @@ class FileStoreController {
       if (prefix != null){
         s3Objects = s3Objects.stream().filter(objectStartsWith(prefix)).collect(toList());
       }
+
+      Predicate<S3Object> delimiterFilter = Optional.ofNullable(delimiter).map(d -> objectContainsDelimiter(d).negate()).orElse(x -> true);
+      contents = s3Objects.stream().filter(delimiterFilter).map(s3Object -> contenFor(s3Object, owner)).collect(toList());
+
       if (delimiter != null){
-        contents = s3Objects.stream().filter(objectContainsDelimiter(delimiter).negate()).map(s3Object -> contenFor(s3Object, owner)).collect(toList());
         commonPrefixes = s3Objects.stream()
                 .filter(objectContainsDelimiter(delimiter))
                 .map(S3Object::getName)
@@ -259,20 +262,28 @@ class FileStoreController {
                 .distinct()
                 .map(CommonPrefixes::new)
                 .collect(toList());
-      }else{
-        contents = s3Objects.stream().map(s3Object -> contenFor(s3Object, owner)).collect(toList());
       }
-      if (contents.size() > maxKeys){
-          truncated = true;
+      if ((contents.size()  + commonPrefixes.size()) > maxKeys) {
+        truncated = true;
       }
       if (continuationToken != null){
           List<BucketContents> contentsCopy = contents;
-          objectsToSkip = IntStream.range(1, contents.size() + 1)
-                  .filter(i -> continuationToken.equals(contentsCopy.get(i-1).getKey()))
-                  .findFirst().orElse(0);
+          objectsToSkip = IntStream.rangeClosed(1, contents.size())
+                .filter(i -> continuationToken.equals(contentsCopy.get(i - 1).getKey()))
+                .findFirst().orElse(0);
       }
-      contents = contents.stream().skip(objectsToSkip).limit(maxKeys).collect(toList());
-      return new ListObjectsV2Result(commonPrefixes, truncated, bucketName, 0, prefix, delimiter, maxKeys, encodingType, continuationToken, startAfter, contents);
+
+      contents = contents.stream().skip(objectsToSkip).limit(maxKeys - commonPrefixes.size()).collect(toList());
+
+      if (startAfter != null){
+          List<BucketContents> contentsCopy = contents;
+          int skipIndex = IntStream.rangeClosed(1, contents.size())
+                  .filter(i -> startAfter.equals(contentsCopy.get(i - 1).getKey()))
+                  .findFirst().orElse(0);
+          contents = contents.subList(skipIndex, contents.size());
+      }
+      int keyCount = contents.size() + commonPrefixes.size();
+      return new ListObjectsV2Result(commonPrefixes, truncated, bucketName, keyCount, prefix, delimiter, maxKeys, encodingType, continuationToken, startAfter, contents);
   }
 
   private Function<String, String> toCommonprefix(final String delimiter, final String prefix) {
@@ -293,7 +304,7 @@ class FileStoreController {
     return object -> object.getName().startsWith(prefix);
   }
 
-  private Predicate<S3Object> objectContainsDelimiter(@RequestParam(required = false) String delimiter) {
+  private Predicate<S3Object> objectContainsDelimiter(final String delimiter) {
     return object -> object.getName().contains(delimiter);
   }
 
